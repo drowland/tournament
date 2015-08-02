@@ -29,24 +29,14 @@ create table registration (
 );
 
 -- MATCHES AND RESULTS TABLE
-/*
 -- Advanced version to support draws
 create table matches (
 	id				serial PRIMARY KEY,
 	tourn_id		integer REFERENCES tournaments (id),
 	player_1_id		integer,
 	player_2_id		integer,
-	player_1_points	real,	-- W=1 | D=0.5 | L=0
-	player_2_points	real	-- W=1 | D=0.5 | L=0
-);
-*/
-
--- MATCHES records results from a match between 2 players for a given tournament
-create table matches (
-	id				serial PRIMARY KEY,
-	tourn_id		integer REFERENCES tournaments (id),
-	win_player_id	integer REFERENCES players (id),
-	lose_player_id	integer REFERENCES players (id)
+	player_1_points	integer,	-- Win=2 | Draw=1 | Lose=0
+	player_2_points	integer		-- Win=2 | Draw=1 | Lose=0
 );
 
 -- TEST DATA INSERTS (2 TOURNAMENTS)

@@ -110,53 +110,47 @@ def playerStandings(tourn_id):
       A list of tuples, each of which contains (id, name, wins, matches):
         id: the player's unique id (assigned by the database)
         name: the player's full name (as registered)
-        wins: the number of matches the player has won
-        matches: the number of matches the player has played
+        points: the number of points the player has won
+        match_count: the number of matches the player has played
     """
 
     conn = connect()
     cursor = conn.cursor()
-    cursor.execute('''SELECT u.id, u.name, sum(u.wins) as wins, sum(u.losses) as losses FROM
-                        (SELECT r.player_id as id, p.name, count(m.win_player_id) as wins, 0 as losses
-                        FROM registration r
-                        LEFT JOIN players p ON r.player_id = p.id
-                        LEFT JOIN matches m ON p.id = m.win_player_id
-                        WHERE r.tourn_id = %s
-                        GROUP BY r.player_id, p.name
-                                          
-                        UNION ALL
-
-                        SELECT r.player_id as id, p.name, 0 as wins, count(m.lose_player_id) as losses
-                        FROM registration r
-                        LEFT JOIN players p ON r.player_id = p.id
-                        LEFT JOIN matches m on p.id = m.lose_player_id
-                        WHERE r.tourn_id = %s
-                        GROUP BY r.player_id, p.name) as u
-                    GROUP BY u.id, u.name ORDER BY sum(u.wins) DESC, sum(u.losses)''', (tourn_id, tourn_id))
+    cursor.execute('''SELECT u.id, u.name, COALESCE(sum(u.points),0) as points, COALESCE(sum(u.match_count),0) as match_count FROM
+                (select r.player_id as id, p.name, count(m.id) as match_count, sum(m.player_1_points) as points 
+                    from registration r
+                    LEFT JOIN players p ON r.player_id = p.id
+                    LEFT JOIN matches m ON p.id =  m.player_1_id
+                    WHERE r.tourn_id = %s
+                    GROUP BY r.player_id, p.name
+                UNION ALL
+                select r.player_id as id, p.name, count(m.id) as match_count, sum(m.player_2_points) as points 
+                    from registration r
+                    LEFT JOIN players p ON r.player_id = p.id
+                    LEFT JOIN matches m ON p.id =  m.player_2_id
+                    WHERE r.tourn_id = %s
+                    GROUP BY r.player_id, p.name) as u
+                GROUP BY u.id, u.name
+                ORDER BY sum(u.points) DESC''', (tourn_id, tourn_id))
     results = cursor.fetchall()
-    
-    standings = []
-    player_matches = 0
-    for player in results:
-        #sum wins and losses to get total matches
-        player_matches = player[2] + player[3]
-        standings.append((player[0], player[1], player[2], player_matches))
-    return standings
+    return results
 
 
-def reportMatch(tourn_id, winner, loser):
+def reportMatch(tourn_id, player1, player2, player1_points, player2_points):
     """Records the outcome of a single match between two players.
 
     Args:
       tourn_id: the id of the tournament being played
-      winner:  the id number of the player who won
-      loser:  the id number of the player who lost
+      player1:          the player id of the first player
+      player2:          the player id of the second player
+      player1_points:   first player points (Win=2 | Draw=1 | Lose=0)
+      player2_points:   second player points (Win=2 | Draw=1 | Lose=0)
     """
     conn = connect()
     cursor = conn.cursor()
-    cursor.execute('''INSERT INTO matches (tourn_id, win_player_id, lose_player_id) 
-                      VALUES (%s, %s, %s)''', 
-                      (tourn_id, winner, loser))
+    cursor.execute('''INSERT INTO matches (tourn_id, player_1_id, player_2_id, player_1_points, player_2_points) 
+                      VALUES (%s, %s, %s, %s, %s)''', 
+                      (tourn_id, player1, player2, player1_points, player2_points))
     conn.commit()
     conn.close()
  
@@ -209,45 +203,65 @@ def swissPairings(tourn_id):
         # Now pull in the current player standings so we have a results history
         standings = playerStandings(tourn_id)
 
+        next_match = []
         # identify whether we have odd/even number of teams as requires special logic for odd
         # don't care for initial pairings as first set of pairings are somewhat random so just 
         # let the last player take a bye
         if (len(standings) % 2 != 0):
             # we have an odd number of players.  find players that have already had a bye
             # in this tournament
-            cursor.execute("""SELECT win_player_id FROM matches WHERE 
-                                lose_player_id IS NULL and tourn_id = %s""", (tourn_id,))
+            cursor.execute("""select player_1_id as player_id from matches 
+                                where player_2_id is null and tourn_id = %s
+                              union 
+                              select player_2_id as player_id from matches
+                                where player_1_id is null and tourn_id = %s""", (tourn_id, tourn_id))
             bye_players = cursor.fetchall()
+
             # give the best positioned player a buy in the next round
-            for x in xrange(0,len(standings)-1):
-                if standings[x][0] not in bye_players:
-                    # no eixisting bye for this player so insert a "bye" player right after
-                    # in the standings
-                    standings.insert(x+1, (None, None, None, None))
-                    break
-        p = 0
-        next_match = []
-        while len(standings) > 1:
-            # can current player play next player or have they already played?
-            already_played = True
-            i = 1   # opponent increment
-            while already_played == True:
-                cursor.execute('''SELECT count(*) as count FROM matches WHERE
-                                  (win_player_id = %s and lose_player_id = %s) or
-                                  (lose_player_id = %s and win_player_id = %s)''',
-                                  (standings[p][0], standings[i][0], standings[p][0], 
-                                  standings[i][0]))
-                match_found = cursor.fetchone()
-                if match_found[0] == 0:
-                    already_played = False
-                    next_match = (standings[p][0], standings[p][1], standings[i][0], standings[i][1])
+            for pos in standings:
+                existing_bye = False
+                for bye in bye_players:
+                    if pos[0] == bye[0]:
+                        existing_bye = True
+                if existing_bye == False:
+                    next_match = (pos[0], pos[1], None, None)
                     results.append(next_match)
-                    # remove both players from standings list as they now have a match assigned
-                    standings = deleteListItems(standings, (standings[p], standings[i]))
+                    standings = deleteListItems(standings, (pos,))
+                    break
+        
+        # attempt to pair up matches
+        break_out = False
+        while len(standings) > 1 and break_out == False:
+            player_increment = 1
+            already_played = True
+
+            while already_played and player_increment < len(standings):
+                p1 = standings[0][0]    # player id of first remaining position in standings
+                p2 = standings[player_increment][0]    # player id of second remaining position in standings
+
+                # check to see if these players have already played
+                cursor.execute('''SELECT count(*) as count FROM matches WHERE
+                                      (player_1_id = %s and player_2_id = %s) or
+                                      (player_2_id = %s and player_1_id = %s)''',
+                                      (p1, p2, p1, p2))
+                match_found = cursor.fetchone()
+
+                if match_found[0] == 0:
+                    # teams have not played so schedule match
+                    already_played = False
+                    next_match = (standings[0][0], standings[0][1], standings[player_increment][0], standings[player_increment][1])
+                    results.append(next_match)
+                    standings = deleteListItems(standings, (standings[0], standings[player_increment]))
                 else:
-                    # Teams already played so try next set of pairings
-                    i += 1
+                    if len(standings) == 2:
+                        # only 2 players left and they have already played.  Need to break out
+                        break_out = True
+                        break
+                    else:
+                        player_increment += 1
+
     conn.close()
+
     return results
 
 def deleteListItems(orig_list, del_items):
@@ -262,7 +276,7 @@ def deleteListItems(orig_list, del_items):
 
     Args:
         orig_list: The original list of all players from which you want certain players removed
-        del_items: List ok "players" that should be deleted from orig_list
+        del_items: List of "players" that should be deleted from orig_list
 
     Returns:
         List of player standings minus the players that have been deleted

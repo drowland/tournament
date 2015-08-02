@@ -94,60 +94,18 @@ def testReportMatches():
     registerPlayer("Diane Grant", tourn_id)
     standings = playerStandings(tourn_id)
     [id1, id2, id3, id4] = [row[0] for row in standings]
-    reportMatch(tourn_id, id1, id2)
-    reportMatch(tourn_id, id3, id4)
+    reportMatch(tourn_id, id1, id2, 2, 0)
+    reportMatch(tourn_id, id3, id4, 2, 0)
     standings = playerStandings(1)
     for (i, n, w, m) in standings:
         if m != 1:
             raise ValueError("Each player should have one match recorded.")
-        if i in (id1, id3) and w != 1:
+        if i in (id1, id3) and w != 2:
             raise ValueError("Each match winner should have one win recorded.")
         elif i in (id2, id4) and w != 0:
             raise ValueError("Each match loser should have zero wins recorded.")
     print "7. After a match, players have updated standings."
 
-
-def testOddTeams():
-    this_tourn_id = 2
-    deleteMatches()
-    deletePlayers()
-    registerPlayer("Dustin Johnson", this_tourn_id)
-    registerPlayer("Justin Rose", this_tourn_id)
-    registerPlayer("Jason Day", this_tourn_id)
-    registerPlayer("Adam Scott", this_tourn_id)
-    registerPlayer("Rory McIlroy", this_tourn_id)
-    registerPlayer("Ian Poulter", this_tourn_id)
-    registerPlayer("Martin Kayner", this_tourn_id)
-    registerPlayer("Phil Mickelson", this_tourn_id)
-    registerPlayer("Sergio Garcia", this_tourn_id)
-    standings = playerStandings(this_tourn_id)
-    if len(standings) != 9:
-        raise ValueError(
-            "There should be 9 players registered for this tournament")
-
-    for x in xrange(0,3):
-        pairings = swissPairings(this_tourn_id)
-
-        if len(pairings) !=5:
-            raise ValueError(
-                "There should be 5 pairings defined")
-        
-        
-        for pair in pairings:
-            # randomly choose a winner for each match
-            first_team_wins = random.choice([True, False])
-            if first_team_wins or pair[2]==None:
-                reportMatch(this_tourn_id,pair[0],pair[2])
-                print('Reporting: %s (W) | %s (L)' % (pair[1],pair[3]))
-            else:
-                reportMatch(this_tourn_id,pair[2],pair[0])
-                print('Reporting: %s (W) | %s (L)' % (pair[3],pair[1]))
-
-        standings = playerStandings(this_tourn_id)
-        for player in standings:
-            print('Player: %s (%s): %s wins | %s matches' 
-                % (player[1], player[0], player[2], player[3]))
-        x += 1
 
 def testPairings():
     deleteMatches()
@@ -158,8 +116,8 @@ def testPairings():
     registerPlayer("Pinkie Pie", tourn_id)
     standings = playerStandings(tourn_id)
     [id1, id2, id3, id4] = [row[0] for row in standings]
-    reportMatch(tourn_id, id1, id2)
-    reportMatch(tourn_id, id3, id4)
+    reportMatch(tourn_id, id1, id2, 2, 0)
+    reportMatch(tourn_id, id3, id4, 2, 0)
     pairings = swissPairings(tourn_id)
     if len(pairings) != 2:
         raise ValueError(
@@ -172,6 +130,70 @@ def testPairings():
             "After one match, players with one win should be paired.")
     print "8. After one match, players with one win are paired."
 
+def testNoRematch():
+    deleteMatches()
+    deletePlayers(tourn_id)
+    registerPlayer("Bruno Walton", tourn_id)
+    registerPlayer("Boots O'Neal", tourn_id)
+    standings = playerStandings(tourn_id)
+    [id1, id2] = [row[0] for row in standings]
+    reportMatch(tourn_id, id1, id2, 2, 0)
+    pairings = swissPairings(tourn_id)
+    if len(pairings) != 0:
+        raise ValueError("No more matches should have been returned")
+    print "9. No pairings returned when players already played each other."
+
+def testOddPlayers():
+    deleteMatches()
+    deletePlayers()
+    registerPlayer("Dustin Johnson", tourn_id)
+    registerPlayer("Justin Rose", tourn_id)
+    registerPlayer("Jason Day", tourn_id)
+    standings = playerStandings(tourn_id)
+    if len(standings) != 3:
+        raise ValueError(
+            "There should be 3 players registered for this tournament")
+    pairings = swissPairings(tourn_id)
+    if len(pairings) != 2:
+        raise ValueError(
+            "Expecting two pairings to be returned even with 3 players")
+    # Find the player that has a bye this round
+    bye_player_id = None
+    for pair in pairings:
+        if pair[2] == None:
+            # Bye would always be in the second player position, hence check array element 2
+            bye_player_id = pair[0]
+    if bye_player_id == None:
+        raise ValueError(
+            "Bye not found in one of the two matches")
+    # Reports the match results before checking the next round to make sure
+    # we don't have the same player getting a bye on the second round
+    for pair in pairings:
+        reportMatch(tourn_id, pair[0], pair[2], 2, 0)
+
+    pairings2 = swissPairings(tourn_id)
+
+    # *** now check to see which player has the bye against the id in bye_player_id ***
+    for pair2 in pairings2:
+        if pair2[2] == None:
+            if pair2[0] == bye_player_id:
+                raise ValueError(
+                    "Player received a bye more than once")
+
+    # REport next round of matches
+    for pair3 in pairings2:
+        reportMatch(tourn_id, pair3[0], pair3[2], 2, 0)
+
+    pairings4 = swissPairings(tourn_id)
+
+    for pair4 in pairings4:
+        if pair4[2] == None:
+            if pair4[0] == bye_player_id:
+                raise ValueError(
+                    "Player received a bye more than once")
+
+    print "10. Odd number of players properly handled."
+
 
 if __name__ == '__main__':
     testDeleteMatches()
@@ -182,5 +204,5 @@ if __name__ == '__main__':
     testStandingsBeforeMatches()
     testReportMatches()
     testPairings()
-    testOddTeams()
-    print "Success!  All tests pass!"
+    testNoRematch()
+    testOddPlayers()
