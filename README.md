@@ -6,7 +6,9 @@ Contents
 ========
 
 tournament.sql
-- Postgres DB initiatization script to set up table structure and minimum reference data
+- Postgres DB initiatization script to set up db abd table structure and minimum reference data.
+
+IMPORTANT NOTE: you may have issues with this script when it attempts to drop the database if this is not your first time running the script as there may be existing connections to the database.  If this does happen, you can comment out the section that drops and creates the database and uncomment the section that drops the individual tables.  Unfortunately there is no easy way to force kill the existing connections that would then allow the drop/create database commands.
 
 tournament.py
 - Main project code that implements the various functions to support a swiss style tournament
@@ -20,13 +22,13 @@ README.md
 Usage
 =====
 
-You will require a postgres database called 'tournment' before starting out.  With this database selected, run the tournament.sql file by invoking from the psql prompt as follows:
+You will require a postgres database called 'tournment' before starting out.  The tournament.sql script will take care of this for you.  All you need to do is establish a psql connection to a postgres server and then runn the following command:
 
 \i tournament.sql
 
 Next you need to make sure you have the python / postgre library installed.  This is psycopg2.
 
-Place the tournament.py and tournament_test.pg in the same location and run the test suite as follows:
+Place the tournament.py and tournament_test.py in the same location and run the test suite as follows:
 
 python tournament_test.py
 
